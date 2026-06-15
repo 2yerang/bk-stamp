@@ -279,7 +279,7 @@ let S = { cards:[], dblEvents:[] };
 let sched = [];
 let pendingCard = null;
 let addType = 'direct';
-let addDbl  = false;
+let isDouble = false;
 
 /* ── PERSISTENCE ───────────────────────────────── */
 function save(){ localStorage.setItem(STORE, JSON.stringify(S)); }
@@ -488,7 +488,7 @@ function renderSchedule(){
   }
   h += `<div style="display:flex;gap:8px;margin-top:10px">
     <input type="date" class="fc" id="new-dbl" style="flex:1">
-    <button class="btn btn-s" onclick="addDbl()" style="white-space:nowrap">추가</button>
+    <button class="btn btn-s" onclick="saveDblEvent()" style="white-space:nowrap">추가</button>
   </div></div>`;
 
   // Upcoming schedule
@@ -590,7 +590,7 @@ function setType(t){
   updatePreview();
 }
 function setDbl(d){
-  addDbl = d;
+  isDouble = d;
   document.getElementById('d-no').className  = 'tgb' + (!d?' on':'');
   document.getElementById('d-yes').className = 'tgb' + (d?' on on-dbl':'');
   updatePreview();
@@ -598,12 +598,12 @@ function setDbl(d){
 function updatePreview(){
   const cur = activeCard();
   const curTot = cur ? cardTotal(cur) : 0;
-  const count = addDbl ? 2 : 1;
+  const count = isDouble ? 2 : 1;
   const after = curTot + count;
   const typeLabel = addType==='direct'?'직관':'타인 도장';
   const el = document.getElementById('add-preview');
   if(!el) return;
-  let msg = `${typeLabel} · ${addDbl?'×2 더블적립':'×1'} → `;
+  let msg = `${typeLabel} · ${isDouble?'×2 더블적립':'×1'} → `;
   if(!cur && curTot===0){
     msg += `새 도장판 시작, ${count}/5`;
   } else if(after >= 5){
@@ -630,7 +630,7 @@ function populateShows(){
 function submitStamp(){
   const date = document.getElementById('inp-date').value;
   if(!date){ alert('날짜를 선택해주세요'); return; }
-  const count = addDbl ? 2 : 1;
+  const count = isDouble ? 2 : 1;
   const showRef = document.getElementById('inp-show').value || null;
   const notes = document.getElementById('inp-notes').value.trim();
   closeSheet();
@@ -641,7 +641,7 @@ function submitStamp(){
 function openBM(){ document.getElementById('bm').classList.add('open'); }
 
 /* ── DOUBLE EVENTS ─────────────────────────────── */
-function addDbl(){
+function saveDblEvent(){
   const d = document.getElementById('new-dbl').value;
   if(!d || S.dblEvents.includes(d)) return;
   S.dblEvents.push(d); S.dblEvents.sort();
