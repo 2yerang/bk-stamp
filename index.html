@@ -157,6 +157,44 @@ nav.tab-bar{position:fixed;bottom:0;left:0;right:0;height:calc(var(--tab-h) + en
 .empty-state .ico{font-size:48px;margin-bottom:12px}
 .empty-state .msg{font-size:15px;font-weight:700;color:var(--text2);margin-bottom:6px}
 .empty-state .sub{font-size:13px}
+
+/* CALENDAR */
+.cal-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.cal-hdr-title{font-size:16px;font-weight:800}
+.cal-nav{width:34px;height:34px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:var(--text2)}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px}
+.cal-dow{background:var(--bg3);text-align:center;font-size:10px;font-weight:700;color:var(--text3);padding:5px 0}
+.cal-dow:first-child{color:#e05050}
+.cal-dow:last-child{color:#4060cc}
+.cal-cell{background:var(--bg1);min-height:62px;padding:4px 3px;display:flex;flex-direction:column;gap:2px;cursor:default}
+.cal-cell.empty{background:var(--bg2)}
+.cal-cell.today .cal-dn{background:var(--accent);color:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center}
+.cal-cell.sun .cal-dn{color:#e05050}
+.cal-cell.sat .cal-dn{color:#4060cc}
+.cal-dn{font-size:11px;font-weight:700;color:var(--text2);margin-bottom:2px;min-width:18px;text-align:center}
+.cal-perf{font-size:9px;border-radius:3px;padding:2px 3px;cursor:pointer;line-height:1.3;-webkit-tap-highlight-color:transparent;transition:opacity .1s}
+.cal-perf:active{opacity:.6}
+.cal-perf.none{background:var(--bg3);color:var(--text3)}
+.cal-perf.direct{background:#dce4f8;color:#2a3d90}
+.cal-perf.proxy{background:#fde8dc;color:#903020}
+.cal-perf.dbl{background:#fef0d0;color:#805010}
+.cal-perf .p-check{font-size:8px;margin-right:1px}
+
+/* PERFORMANCE DETAIL SHEET */
+.cast-table{width:100%;border-collapse:collapse;margin:12px 0}
+.cast-table td{padding:7px 0;border-bottom:1px solid var(--border);font-size:14px}
+.cast-table td:first-child{color:var(--text3);font-size:12px;font-weight:700;width:72px}
+.cast-table tr:last-child td{border-bottom:none}
+.reg-row{display:flex;align-items:center;padding:8px 10px;background:var(--accent-light);border-radius:8px;margin-bottom:6px;font-size:13px}
+.reg-row.prx{background:#fdf0e8}
+.reg-row .reg-lbl{font-weight:700;color:var(--accent);min-width:56px}
+.reg-row.prx .reg-lbl{color:var(--proxy)}
+.reg-row .reg-x{margin-left:auto;color:var(--text3);font-size:16px;padding:2px 8px}
+.perf-btn-row{display:flex;gap:8px;margin-top:14px}
+.perf-btn-row button{flex:1;padding:11px;border-radius:10px;font-size:14px;font-weight:700}
+.btn-direct{background:var(--accent);color:#fff}
+.btn-proxy{background:var(--proxy);color:#fff}
+.dbl-note{font-size:12px;color:var(--milestone);font-weight:700;text-align:center;margin-top:8px}
 </style>
 </head>
 <body>
@@ -246,6 +284,13 @@ nav.tab-bar{position:fixed;bottom:0;left:0;right:0;height:calc(var(--tab-h) + en
   <button class="btn btn-p" onclick="submitStamp()">도장 추가하기</button>
 </div>
 
+<!-- PERF DETAIL SHEET -->
+<div class="overlay" id="perf-overlay" onclick="closePerfSheet()"></div>
+<div class="sheet" id="perf-sheet">
+  <div class="handle"></div>
+  <div id="perf-content"></div>
+</div>
+
 <!-- BENEFIT MODAL -->
 <div class="bm" id="bm">
   <div class="bm-box">
@@ -270,6 +315,10 @@ nav.tab-bar{position:fixed;bottom:0;left:0;right:0;height:calc(var(--tab-h) + en
 <script>
 /* ── CONSTANTS ─────────────────────────────────── */
 const STORE = 'bk-stamp-v1';
+const now0 = new Date();
+let calYear  = now0.getFullYear();
+let calMonth = now0.getMonth();
+let selectedPerf = null;
 const B_LABEL = { polaroid:'📸 폴라로이드', ost_a:'💿 OST A', ost_b:'💽 OST B' };
 const B_CLS   = { polaroid:'b-polaroid', ost_a:'b-osta', ost_b:'b-ostb' };
 const DOW     = ['일','월','화','수','목','금','토'];
@@ -322,13 +371,18 @@ function chooseBenefit(b){
   renderAll();
 }
 
-function delStamp(cardId, stampId){
+function delStampById(cardId, stampId){
   const c = S.cards.find(x=>x.id==cardId);
-  if(!c || !confirm('이 도장을 삭제할까요?')) return;
+  if(!c) return;
   c.stamps = c.stamps.filter(s=>s.id!=stampId);
   if(c.benefit && cardTotal(c)<5) c.benefit = null;
   if(c.stamps.length===0 && !c.benefit) S.cards = S.cards.filter(x=>x.id!=cardId);
   save(); renderAll();
+}
+
+function delStamp(cardId, stampId){
+  if(!confirm('이 도장을 삭제할까요?')) return;
+  delStampById(cardId, stampId);
 }
 
 /* ── STAMP CARD HTML ───────────────────────────── */
@@ -471,12 +525,49 @@ function renderCards(){
 }
 
 function renderSchedule(){
+  const attendedRefs = getAttendedRefs();
+  const perfByDate   = getPerfByDate();
+
+  const year = calYear, month = calMonth;
+  const MN = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
   const today = new Date().toISOString().slice(0,10);
-  const up = sched.filter(s=>s.date>=today);
 
-  let h = '';
+  let h = `<div class="card">
+    <div class="cal-hdr">
+      <button class="cal-nav" onclick="prevMonth()">‹</button>
+      <div class="cal-hdr-title">${year}년 ${MN[month]}</div>
+      <button class="cal-nav" onclick="nextMonth()">›</button>
+    </div>
+    <div class="cal-grid">
+      ${['일','월','화','수','목','금','토'].map(d=>`<div class="cal-dow">${d}</div>`).join('')}`;
 
-  // Double events manager
+  for(let i=0; i<firstDow; i++) h += `<div class="cal-cell empty"></div>`;
+
+  for(let day=1; day<=daysInMonth; day++){
+    const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const perfs = perfByDate[ds] || [];
+    const dow = new Date(ds).getDay();
+    const isToday = ds === today;
+    const dowCls = dow===0?' sun':dow===6?' sat':'';
+    h += `<div class="cal-cell${isToday?' today':''}${dowCls}">
+      <div class="cal-dn">${day}</div>`;
+    perfs.forEach(p=>{
+      const ref = `${p.date}_${p.time}`;
+      const att = attendedRefs.get(ref);
+      const isDbl = S.dblEvents.includes(p.date);
+      const cls = att ? (att==='direct'?'direct':'proxy') : (isDbl?'dbl':'none');
+      const timeStr = p.time.slice(0,5);
+      h += `<div class="cal-perf ${cls}" onclick="openPerfSheet('${p.date}','${p.time}')">
+        ${att?`<span class="p-check">✓</span>`:''}${timeStr}
+      </div>`;
+    });
+    h += `</div>`;
+  }
+  h += `</div></div>`;
+
+  // 더블적립 이벤트 관리
   h += `<div class="card"><div class="sec">더블적립 이벤트 날짜</div>`;
   if(S.dblEvents.length){
     h += S.dblEvents.map(e=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
@@ -491,22 +582,110 @@ function renderSchedule(){
     <button class="btn btn-s" onclick="saveDblEvent()" style="white-space:nowrap">추가</button>
   </div></div>`;
 
-  // Upcoming schedule
-  if(up.length){
-    h += `<div class="card"><div class="sec">예정 공연 (${up.length}회)</div>`;
-    up.slice(0,30).forEach(s=>{
-      const isDbl = S.dblEvents.includes(s.date);
-      h += `<div class="sc-item">
-        <div class="sc-dt">${s.date.slice(5)}<br><span style="font-size:11px;color:var(--text3)">${DOW[new Date(s.date).getDay()]} ${s.time}</span></div>
-        <div class="sc-cast">${s.fyodor} · ${s.dmitri}<br>${s.ivan} · ${s.alyosha}</div>
-        ${isDbl?'<span class="dbl-tag">더블</span>':''}
+  document.getElementById('schedule-body').innerHTML = h;
+}
+
+function prevMonth(){
+  calMonth--; if(calMonth<0){calMonth=11;calYear--;}
+  renderSchedule();
+}
+function nextMonth(){
+  calMonth++; if(calMonth>11){calMonth=0;calYear++;}
+  renderSchedule();
+}
+
+function getAttendedRefs(){
+  const m = new Map();
+  S.cards.forEach(c=>c.stamps.forEach(st=>{
+    if(st.showRef && !m.has(st.showRef)) m.set(st.showRef, st.type);
+  }));
+  return m;
+}
+
+function getPerfByDate(){
+  const m = {};
+  sched.forEach(s=>{ if(!m[s.date]) m[s.date]=[]; m[s.date].push(s); });
+  return m;
+}
+
+function openPerfSheet(date, time){
+  selectedPerf = sched.find(s=>s.date===date && s.time===time);
+  if(!selectedPerf) return;
+
+  const ref    = `${date}_${time}`;
+  const d      = new Date(date);
+  const isDbl  = S.dblEvents.includes(date);
+  const dateLabel = `${d.getMonth()+1}/${d.getDate()} (${DOW[d.getDay()]}) ${time}`;
+
+  // Find existing stamps for this performance
+  const regStamps = [];
+  S.cards.forEach(c=>c.stamps.forEach(st=>{
+    if(st.showRef===ref) regStamps.push({cardId:c.id, stamp:st});
+  }));
+
+  const roles = [
+    ['표도르', selectedPerf.fyodor],
+    ['드미트리', selectedPerf.dmitri],
+    ['이반', selectedPerf.ivan],
+    ['알료샤', selectedPerf.alyosha],
+    ['스메르쟈코프', selectedPerf.smerdy],
+    ['피아니스트', selectedPerf.pianist],
+  ];
+
+  let h = `<div style="font-size:18px;font-weight:800;margin-bottom:6px">${dateLabel}</div>`;
+  if(isDbl) h += `<span class="dbl-tag">더블적립 이벤트 ×2</span>`;
+
+  h += `<table class="cast-table">`;
+  roles.forEach(([role,actor])=>{
+    h += `<tr><td>${role}</td><td><strong>${actor}</strong></td></tr>`;
+  });
+  h += `</table>`;
+
+  // Existing registrations
+  if(regStamps.length){
+    h += `<div style="margin-bottom:8px">`;
+    regStamps.forEach(({cardId,stamp})=>{
+      const lbl = stamp.type==='direct'?'직관':'타인 도장';
+      const cls = stamp.type==='direct'?'':'prx';
+      h += `<div class="reg-row ${cls}">
+        <span class="reg-lbl">${lbl}</span>
+        <span style="font-size:13px">×${stamp.count} 도장 등록됨</span>
+        <button class="reg-x" onclick="delStampFromPerf('${cardId}','${stamp.id}')">✕</button>
       </div>`;
     });
-    if(up.length>30) h += `<div style="text-align:center;font-size:12px;color:var(--text3);padding-top:8px">+${up.length-30}회 더</div>`;
     h += `</div>`;
   }
 
-  document.getElementById('schedule-body').innerHTML = h;
+  h += `<div class="perf-btn-row">
+    <button class="btn-direct" onclick="registerFromPerf('direct')">직관 등록</button>
+    <button class="btn-proxy" onclick="registerFromPerf('proxy')">타인 도장 등록</button>
+  </div>`;
+  if(isDbl) h += `<div class="dbl-note">★ 더블적립 이벤트 — 1회 관람 = 2도장 자동 적용</div>`;
+
+  document.getElementById('perf-content').innerHTML = h;
+  document.getElementById('perf-overlay').classList.add('open');
+  document.getElementById('perf-sheet').classList.add('open');
+}
+
+function closePerfSheet(){
+  document.getElementById('perf-overlay').classList.remove('open');
+  document.getElementById('perf-sheet').classList.remove('open');
+}
+
+function registerFromPerf(type){
+  if(!selectedPerf) return;
+  const ref   = `${selectedPerf.date}_${selectedPerf.time}`;
+  const isDbl = S.dblEvents.includes(selectedPerf.date);
+  const count = isDbl ? 2 : 1;
+  closePerfSheet();
+  addStamps(selectedPerf.date, type, count, ref, '');
+}
+
+function delStampFromPerf(cardId, stampId){
+  if(!confirm('이 도장을 삭제할까요?')) return;
+  delStampById(cardId, stampId);
+  // Re-open sheet with updated data
+  if(selectedPerf) openPerfSheet(selectedPerf.date, selectedPerf.time);
 }
 
 function renderRec(){
@@ -658,6 +837,8 @@ function goPage(id, btn){
   document.querySelectorAll('.tb').forEach(b=>b.classList.remove('active'));
   document.getElementById('p-'+id).classList.add('active');
   if(btn) btn.classList.add('active');
+  if(id==='schedule') renderSchedule();
+  if(id==='rec') renderRec();
 }
 
 /* ── THEME ─────────────────────────────────────── */
