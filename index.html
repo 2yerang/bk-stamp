@@ -168,6 +168,10 @@ nav.tab-bar{position:fixed;bottom:0;left:0;right:0;height:calc(var(--tab-h) + en
 .cal-dow:last-child{color:#4060cc}
 .cal-cell{background:var(--bg1);min-height:62px;padding:4px 3px;display:flex;flex-direction:column;gap:2px;cursor:default}
 .cal-cell.empty{background:var(--bg2)}
+.cal-cell.other-month{background:var(--bg2)}
+.cal-cell.out-period{background:var(--bg3)}
+.cal-cell.out-period .cal-perf{opacity:.3;pointer-events:none}
+.cal-dn.faded{color:var(--text3);opacity:.35}
 .cal-cell.today .cal-dn{background:var(--accent);color:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center}
 .cal-cell.sun .cal-dn{color:#e05050}
 .cal-cell.sat .cal-dn{color:#4060cc}
@@ -319,6 +323,10 @@ const now0 = new Date();
 let calYear  = now0.getFullYear();
 let calMonth = now0.getMonth();
 let selectedPerf = null;
+const PERF_START = '2026-05-12';
+const PERF_END   = '2026-09-06';
+const CAL_MIN    = { year:2026, month:4 }; // May 2026
+const CAL_MAX    = { year:2026, month:8 }; // Sep 2026
 const B_LABEL = { polaroid:'📸 폴라로이드', ost_a:'💿 OST A', ost_b:'💽 OST B' };
 const B_CLS   = { polaroid:'b-polaroid', ost_a:'b-osta', ost_b:'b-ostb' };
 const DOW     = ['일','월','화','수','목','금','토'];
@@ -336,6 +344,13 @@ function load(){
   try { const d = localStorage.getItem(STORE); if(d) S = JSON.parse(d); } catch(e){}
   S.cards    = S.cards    || [];
   S.dblEvents= S.dblEvents|| [];
+  if(!S.dblInited){
+    ['2026-06-09','2026-06-10','2026-06-11','2026-06-12','2026-06-13','2026-06-14']
+      .forEach(d=>{ if(!S.dblEvents.includes(d)) S.dblEvents.push(d); });
+    S.dblEvents.sort();
+    S.dblInited = true;
+    save();
+  }
 }
 
 /* ── CARD LOGIC ────────────────────────────────── */
@@ -530,41 +545,58 @@ function renderSchedule(){
 
   const year = calYear, month = calMonth;
   const MN = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
-  const firstDow = new Date(year, month, 1).getDay();
+  const firstDow    = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month+1, 0).getDate();
-  const today = new Date().toISOString().slice(0,10);
+  const prevDays    = new Date(year, month, 0).getDate();
+  const today       = new Date().toISOString().slice(0,10);
+  const atMin = calYear===CAL_MIN.year && calMonth===CAL_MIN.month;
+  const atMax = calYear===CAL_MAX.year && calMonth===CAL_MAX.month;
 
   let h = `<div class="card">
     <div class="cal-hdr">
-      <button class="cal-nav" onclick="prevMonth()">‹</button>
+      <button class="cal-nav" onclick="prevMonth()" style="${atMin?'opacity:.3;pointer-events:none':''}">‹</button>
       <div class="cal-hdr-title">${year}년 ${MN[month]}</div>
-      <button class="cal-nav" onclick="nextMonth()">›</button>
+      <button class="cal-nav" onclick="nextMonth()" style="${atMax?'opacity:.3;pointer-events:none':''}">›</button>
     </div>
     <div class="cal-grid">
       ${['일','월','화','수','목','금','토'].map(d=>`<div class="cal-dow">${d}</div>`).join('')}`;
 
-  for(let i=0; i<firstDow; i++) h += `<div class="cal-cell empty"></div>`;
+  // 이전 달 overflow 날짜 (흐리게)
+  for(let i=0; i<firstDow; i++){
+    const day = prevDays - (firstDow - 1 - i);
+    h += `<div class="cal-cell other-month"><div class="cal-dn faded">${day}</div></div>`;
+  }
 
+  // 현재 달 날짜
   for(let day=1; day<=daysInMonth; day++){
     const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     const perfs = perfByDate[ds] || [];
     const dow = new Date(ds).getDay();
     const isToday = ds === today;
+    const inPerf = ds >= PERF_START && ds <= PERF_END;
     const dowCls = dow===0?' sun':dow===6?' sat':'';
-    h += `<div class="cal-cell${isToday?' today':''}${dowCls}">
+    const periodCls = inPerf ? '' : ' out-period';
+    h += `<div class="cal-cell${isToday?' today':''}${dowCls}${periodCls}">
       <div class="cal-dn">${day}</div>`;
     perfs.forEach(p=>{
       const ref = `${p.date}_${p.time}`;
       const att = attendedRefs.get(ref);
       const isDbl = S.dblEvents.includes(p.date);
       const cls = att ? (att==='direct'?'direct':'proxy') : (isDbl?'dbl':'none');
-      const timeStr = p.time.slice(0,5);
       h += `<div class="cal-perf ${cls}" onclick="openPerfSheet('${p.date}','${p.time}')">
-        ${att?`<span class="p-check">✓</span>`:''}${timeStr}
+        ${att?`<span class="p-check">✓</span>`:''}${p.time.slice(0,5)}
       </div>`;
     });
     h += `</div>`;
   }
+
+  // 다음 달 overflow 날짜 (흐리게)
+  const totalCells = firstDow + daysInMonth;
+  const trailing = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
+  for(let i=1; i<=trailing; i++){
+    h += `<div class="cal-cell other-month"><div class="cal-dn faded">${i}</div></div>`;
+  }
+
   h += `</div></div>`;
 
   // 더블적립 이벤트 관리
@@ -586,10 +618,12 @@ function renderSchedule(){
 }
 
 function prevMonth(){
+  if(calYear===CAL_MIN.year && calMonth===CAL_MIN.month) return;
   calMonth--; if(calMonth<0){calMonth=11;calYear--;}
   renderSchedule();
 }
 function nextMonth(){
+  if(calYear===CAL_MAX.year && calMonth===CAL_MAX.month) return;
   calMonth++; if(calMonth>11){calMonth=0;calYear++;}
   renderSchedule();
 }
